@@ -55,7 +55,7 @@ void mc_interface_set_openloop_current(float current, float rpm);
 void mc_interface_set_openloop_phase(float current, float phase);
 void mc_interface_set_openloop_duty(float dutyCycle, float rpm);
 void mc_interface_set_openloop_duty_phase(float dutyCycle, float phase);
-int mc_interface_set_tachometer_value(int steps);
+int mc_interface_set_tachometer_value(int steps, int steps_absolute);
 void mc_interface_brake_now(void);
 void mc_interface_release_motor(void);
 void mc_interface_release_motor_override(void);

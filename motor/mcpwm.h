@@ -35,7 +35,7 @@ void mcpwm_set_pid_pos(float pos);
 void mcpwm_set_current(float current);
 void mcpwm_release_motor(void);
 void mcpwm_set_brake_current(float current);
-int mcpwm_set_tachometer_value(int steps);
+int mcpwm_set_tachometer_value(int steps, int steps_absolute);
 void mcpwm_brake_now(void);
 void mcpwm_release_motor(void);
 int mcpwm_get_comm_step(void);

@@ -157,6 +157,10 @@ static void do_dc_cal(void);
 static void pll_run(float phase, float dt, volatile float *phase_var,
 		volatile float *speed_var);
 
+static void terminal_do_dccal(int argc, const char **argv);
+static void terminal_get_offset_currents(int argc, const char **argv);
+
+
 // Defines
 #define IS_DETECTING()			(state == MC_STATE_DETECTING)
 
@@ -467,7 +471,21 @@ void mcpwm_init(volatile mc_configuration *configuration) {
 	tachometer_abs = 0;
 
 	init_done = true;
+
+    terminal_register_command_callback(
+            "do_dccal",
+            "Run DCCAL",
+            "",
+            terminal_do_dccal);
+
+    terminal_register_command_callback(
+            "get_offset_currents",
+            "Get Offset Currents",
+            "",
+            terminal_get_offset_currents);
 }
+
+
 
 void mcpwm_deinit(void) {
 	if (!init_done) {
@@ -861,11 +879,12 @@ float mcpwm_get_tot_current_in_filtered(void) {
  * The previous tachometer value in motor steps. The number of motor revolutions will
  * be this number divided by (3 * MOTOR_POLE_NUMBER).
  */
-int mcpwm_set_tachometer_value(int steps)
+int mcpwm_set_tachometer_value(int steps, int steps_absolute)
 {
 	int val = tachometer;
 
 	tachometer = steps;
+    tachometer_abs = steps_absolute;
 
 	return val;
 }
@@ -3020,4 +3039,12 @@ static void set_next_comm_step(int next_step) {
 		TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
 		TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Disable);
 	}
+}
+
+static void terminal_do_dccal(int argc, const char **argv) {
+    do_dc_cal();
+}
+static void terminal_get_offset_currents(int argc, const char **argv) {
+    commands_printf("currents: %d, %d, %d", GET_CURRENT1(), GET_CURRENT2(), GET_CURRENT3());
+    commands_printf("offset_currents: %d, %d, %d", curr0_offset, curr1_offset, curr2_offset);
 }
