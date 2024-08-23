@@ -20,9 +20,9 @@
 #ifndef HW_XESC2_H_
 #define HW_XESC2_H_
 
-#include "tmc6200.h"
 
 bool tmc_error(void);
+void tmc6200_reset_faults(void);
 
 #define HW_NAME					"xESC2"
 
@@ -243,19 +243,19 @@ bool tmc_error(void);
 #define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
 #endif
 
-#define MCCONF_L_CURRENT_MAX			2.0	// Current limit in Amperes (Upper)
-#define MCCONF_L_CURRENT_MIN			-2.0	// Current limit in Amperes (Lower)
-#define MCCONF_L_IN_CURRENT_MAX			5.0	// Input current limit in Amperes (Upper)
-#define MCCONF_L_IN_CURRENT_MIN			-5.0	// Input current limit in Amperes (Lower)
+#define MCCONF_L_CURRENT_MAX			6.0	// Current limit in Amperes (Upper)
+#define MCCONF_L_CURRENT_MIN			-6.0	// Current limit in Amperes (Lower)
+#define MCCONF_L_IN_CURRENT_MAX			2.0	// Input current limit in Amperes (Upper)
+#define MCCONF_L_IN_CURRENT_MIN			-2.0	// Input current limit in Amperes (Lower)
 
 #define APPCONF_IMU_TYPE					IMU_TYPE_OFF
 
 
 // Setting limits
-#define HW_LIM_CURRENT			-10.0, 10.0
-#define HW_LIM_CURRENT_IN		-15.0, 15.0
+#define HW_LIM_CURRENT			-15.0, 15.0
+#define HW_LIM_CURRENT_IN		-10.0, 10.0
 #define HW_LIM_CURRENT_ABS		0.0, 15.0
-#define HW_LIM_VIN				6.0, 40.0
+#define HW_LIM_VIN				6.0, 57.0
 #define HW_LIM_ERPM				-200e3, 200e3
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 0.99
