@@ -113,9 +113,14 @@ void tmc6200_reset_faults(void);
 #endif
 
 // We need to scale the ADC_Value because of the voltage divider between the gate driver and the analog inputs
-#define GET_CURRENT1()		(int)((4095.0f - ((float)ADC_Value[ADC_IND_CURR1]*1.11f)))
-#define GET_CURRENT2()		(int)((4095.0f - ((float)ADC_Value[ADC_IND_CURR2]*1.11f)))
-#define GET_CURRENT3()		(int)((4095.0f - ((float)ADC_Value[ADC_IND_CURR3]*1.11f)))
+#define GET_CURRENT1()		(4095.0f - ((float)ADC_Value[ADC_IND_CURR1]*1.11f))
+#define GET_CURRENT2()		(4095.0f - ((float)ADC_Value[ADC_IND_CURR2]*1.11f))
+#define GET_CURRENT3()		(4095.0f - ((float)ADC_Value[ADC_IND_CURR3]*1.11f))
+#define HW_GET_INJ_CURR1()		(4095.0f - ((float)ADC_GetInjectedConversionValue(ADC1, ADC_InjectedChannel_1)*1.11f))
+#define HW_GET_INJ_CURR2()		(4095.0f - ((float)ADC_GetInjectedConversionValue(ADC2, ADC_InjectedChannel_1)*1.11f))
+#define HW_GET_INJ_CURR3()		(4095.0f - ((float)ADC_GetInjectedConversionValue(ADC3, ADC_InjectedChannel_1)*1.11f))
+#define HW_GET_INJ_CURR1_S2()	(4095.0f - ((float)ADC_GetInjectedConversionValue(ADC2, ADC_InjectedChannel_2)*1.11f))
+#define HW_GET_INJ_CURR2_S2()	(4095.0f - ((float)ADC_GetInjectedConversionValue(ADC1, ADC_InjectedChannel_2)*1.11f))
 
 
 // Input voltage
