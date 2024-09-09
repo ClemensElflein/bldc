@@ -61,7 +61,6 @@ bool enc_abi_init(ABI_config_t *cfg) {
 void enc_abi_deinit(ABI_config_t *cfg) {
 	nvicDisableVector(cfg->exti_ch);
 	palSetPadMode(cfg->I_gpio, cfg->I_pin, PAL_MODE_INPUT_PULLUP);
-	cfg->state.last_enc_angle = 0.0;
 }
 
 float enc_abi_read_deg(ABI_config_t *cfg) {

@@ -1,5 +1,5 @@
 /*
-    Copyright 2022 Joel Svensson  svenssonjoel@yahoo.se
+    Copyright 2022, 2023 Joel Svensson  svenssonjoel@yahoo.se
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -27,11 +27,110 @@ extern "C" {
 /** LBM major version */
 #define LBM_MAJOR_VERSION 0
 /** LBM minor version */
-#define LBM_MINOR_VERSION 9
+#define LBM_MINOR_VERSION 25
 /** LBM patch revision */
 #define LBM_PATCH_VERSION 0
 
+#define LBM_VERSION_STRING "0.25.0"
+
+
 /*! \page changelog Changelog
+JUL 23 2024: Version 0.25.0
+  - Multiple bugfixes. 
+  - Trap function on expressions.
+  - Reference manual updates.
+  - New String operations (Thanks Rasmus S)
+  - Order of writes changed when writing to flash.
+
+APR 28 2024: Version 0.24.0
+  - Cleaning of lispbm repository. less to maintain.
+  - Lots of improvements to documentation.
+  - lbm_memory optimization. 
+
+MAR 9 2024: Version 0.23.0
+  - rest-args functionality added to function application of lambda defined function.
+  - Improved x86 REPL.
+  - Refernce manual is generated from LispBM script.
+  - Optional env arguments for eval and eval-program.
+  - Backwards indexing in setix using negative numbers.
+  - Bug fix: type promotion
+  - Bug fix: addition and subtraction of byte values
+
+DEC 26 2023: Version 0.22.0
+  - Built-in sort operation on lists.
+  - Built-in list-merge operation.
+  - Bugfix in map.
+  - Literal forms for special characters.
+
+
+NOV 28 2023: Version 0.21.0
+  - Removed partial evaluation.
+  - Added a built-in loop.
+  - Modification to built-in implementation of map.
+  - Addition of pointer-reversal garbage collector. Not on by default.
+  - Improved error messages.
+
+NOV 1 2023: Version 0.20.0
+  - Added lbm_set_error_suspect function to enable extension authors to point out in more detail what is wrong.
+  - Improvement to error messages in some cases.
+  - Changed behavior of set family on functions when variable is not already bound (now an error).
+  - Fix of bug in flat_value handling.
+
+OCT 8 2023: Version 0.19.0
+  - Error message and callback on GC stack overflow.
+  - Functions for gc stack size statistics added.
+  - GC does not look at constant values.
+  - Changes to environment handling during pattern matches.
+
+AUG 26 2023: Version 0.18.0
+  - Removed wait-for flags
+  - Fix bug in unblock_unboxed when unblocking with error value.
+
+JUL 29 2023: Version 0.17.0
+  - Addition of a timeout functionality to blocked contexts.
+  - recv-to special form added for receives with a timeout.
+  - block_context_from_extension_timeout function added.
+  - Unified sleeping and blocked queues.
+  - Added a new optional argument to spawn and spawn-trap that can be used to provide a name for the thread.
+  - Added profiler functionality.
+
+JUL 16 2023: Version 0.16.0
+  - Addition of flat values as a type in the language.
+  - Addition of kill function for termination of threads.
+
+JUN 29 2023: version 0.15.0
+  - Bug fix in lift_array_flash.
+  - Bug fix in map.
+  - Bug fix in reader.
+  - Bug fix in dynamic load.
+  - Bug fix in quasiquotation expansion.
+  - 
+
+JUN 8 2023: Version 0.14.0
+  - wait-for that blocks code unless a flag is set.
+  - Bug fix in undefine.
+  - Lots of cleaning and refactoring.
+
+MAJ 5 2023: Version 0.13.0
+  - Changed behavior of closure application to zero args. Used to be equivalent
+    to application to nil.
+  - Removed make-env and in-env.
+  - Refactoring for readability. allocate_closure in eval_cps.
+
+APR 30 2023: Version 0.12.0
+  - added make-env and in-env for a kind of namespace management.
+  - Deeply nested errors are resolved using longjmp.
+
+Apr 4 2023: Version 0.11.0
+  - Incremental read evaluates expressions as soon as possible while reading.
+  - move-to-flash for storing constant parts of program in flash.
+  - All arrays are now byte-arrays. [type-X 1 2 3]-syntax removed.
+
+Mar 19 2023: Version 0.10.0
+  - Added deconstructive let bindings with optional dont-care fields.
+  - Added (var x (....)) for local bindings in progn.
+  - Added setq
+  - Curly brackets { .... } syntax as sugar over progn.
 
 Feb 18 2023: Version 0.9.0
   - Arrays in flat_value are stored verbatim, not as ptr.

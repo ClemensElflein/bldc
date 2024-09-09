@@ -1,7 +1,0 @@
-(and (eq nil 'nil)
-     (eq nil '())
-     (eq nil ())
-     (eq 'nil '())
-     (eq 'nil ())
-     (eq 'nil nil)
-     (eq '() ()))

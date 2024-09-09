@@ -66,6 +66,8 @@ float mcpwm_foc_get_tot_current_directional(void);
 float mcpwm_foc_get_tot_current_directional_filtered(void);
 float mcpwm_foc_get_id(void);
 float mcpwm_foc_get_iq(void);
+float mcpwm_foc_get_id_set(void);
+float mcpwm_foc_get_iq_set(void);
 float mcpwm_foc_get_id_filter(void);
 float mcpwm_foc_get_iq_filter(void);
 float mcpwm_foc_get_tot_current_in(void);
@@ -75,6 +77,7 @@ int mcpwm_foc_get_tachometer_abs_value(bool reset);
 float mcpwm_foc_get_phase(void);
 float mcpwm_foc_get_phase_observer(void);
 float mcpwm_foc_get_phase_encoder(void);
+float mcpwm_foc_get_phase_hall(void);
 float mcpwm_foc_get_vd(void);
 float mcpwm_foc_get_vq(void);
 float mcpwm_foc_get_mod_alpha_raw(void);
@@ -88,7 +91,15 @@ int mcpwm_foc_encoder_detect(float current, bool print, float *offset, float *ra
 int mcpwm_foc_measure_resistance(float current, int samples, bool stop_after, float *resistance);
 int mcpwm_foc_measure_inductance(float duty, int samples, float *curr, float *ld_lq_diff, float *inductance);
 int mcpwm_foc_measure_inductance_current(float curr_goal, int samples, float *curr, float *ld_lq_diff, float *inductance);
+
+// Audio
 bool mcpwm_foc_beep(float freq, float time, float voltage);
+bool mcpwm_foc_play_tone(int channel, float freq, float voltage);
+void mcpwm_foc_stop_audio(bool reset);
+bool mcpwm_foc_set_audio_sample_table(int channel, float *samples, int len);
+const float *mcpwm_foc_get_audio_sample_table(int channel);
+bool mcpwm_foc_play_audio_samples(const int8_t *samples, int num_samp, float f_samp, float voltage);
+
 int mcpwm_foc_measure_res_ind(float *res, float *ind, float *ld_lq_diff);
 int mcpwm_foc_hall_detect(float current, uint8_t *hall_table, bool *result);
 int mcpwm_foc_dc_cal(bool cal_undriven);

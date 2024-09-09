@@ -17,6 +17,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC push_options
+#pragma GCC optimize ("Os")
+
 #include "ch.h"
 #include "hal.h"
 #include "stm32f4xx_conf.h"
@@ -39,7 +42,7 @@
 #include "commands.h"
 #include "timeout.h"
 #include "encoder/encoder.h"
-#include "servo_simple.h"
+#include "pwm_servo.h"
 #include "utils_math.h"
 #include "nrf_driver.h"
 #include "rfhelp.h"
@@ -47,6 +50,10 @@
 #include "timer.h"
 #include "imu.h"
 #include "flash_helper.h"
+#include "conf_custom.h"
+#include "crc.h"
+#include "qmlui.h"
+
 #if HAS_BLACKMAGIC
 #include "bm_if.h"
 #endif
@@ -54,9 +61,9 @@
 #include "mempools.h"
 #include "events.h"
 #include "main.h"
+
 #ifdef CAN_ENABLE
 #include "comm_can.h"
-
 #define CAN_FRAME_MAX_PL_SIZE	8
 #endif
 
@@ -71,7 +78,7 @@
  * TIM2: mcpwm_foc
  * TIM5: timer
  * TIM8: mcpwm
- * TIM3: servo_dec/Encoder (HW_R2)/servo_simple
+ * TIM3: servo_dec/Encoder (HW_R2)/pwm_servo
  * TIM4: WS2811/WS2812 LEDs/Encoder (other HW)
  *
  * DMA/stream	Device		Function
@@ -187,6 +194,10 @@ static THD_FUNCTION(periodic_thread, arg) {
 				commands_send_rotor_pos(utils_angle_difference(mcpwm_foc_get_phase_observer(), mcpwm_foc_get_phase_encoder()));
 				break;
 
+			case DISP_POS_MODE_HALL_OBSERVER_ERROR:
+				commands_send_rotor_pos(utils_angle_difference(mcpwm_foc_get_phase_observer(), mcpwm_foc_get_phase_hall()));
+				break;
+
 			default:
 				break;
 			}
@@ -211,6 +222,31 @@ bool main_init_done(void) {
 	return m_init_done;
 }
 
+uint32_t main_calc_hw_crc(void) {
+	uint32_t crc = 0;
+
+#ifdef QMLUI_SOURCE_HW
+	crc = crc32_with_init(data_qml_hw, DATA_QML_HW_SIZE, crc);
+#endif
+
+	for (int i = 0;i < conf_custom_cfg_num();i++) {
+		uint8_t *data = 0;
+		int len = conf_custom_get_cfg_xml(i, &data);
+		if (len > 0) {
+			crc = crc32_with_init(data, len, crc);
+		}
+	}
+
+	if (flash_helper_code_size(CODE_IND_QML) > 0) {
+		crc = crc32_with_init(
+				flash_helper_code_data(CODE_IND_QML),
+				flash_helper_code_size(CODE_IND_QML),
+				crc);
+	}
+
+	return crc;
+}
+
 int main(void) {
 	halInit();
 	chSysInit();
@@ -233,14 +269,14 @@ int main(void) {
 
 	mempools_init();
 	events_init();
+	timer_init(); // Initialize timer here to allow I2C in hw_init
 	hw_init_gpio();
 	LED_RED_OFF();
 	LED_GREEN_OFF();
 
-	timer_init();
 	conf_general_init();
 
-	if( flash_helper_verify_flash_memory() == FAULT_CODE_FLASH_CORRUPTION )	{
+	if (flash_helper_verify_flash_memory() == FAULT_CODE_FLASH_CORRUPTION)	{
 		// Loop here, it is not safe to run any code
 		while (1) {
 			chThdSleepMilliseconds(100);
@@ -259,16 +295,17 @@ int main(void) {
 	comm_usb_init();
 #endif
 
-#if CAN_ENABLE
-	comm_can_init();
-#endif
-
 	app_uartcomm_initialize();
 	app_configuration *appconf = mempools_alloc_appconf();
 	conf_general_read_app_configuration(appconf);
-	app_set_configuration(appconf);
 	app_uartcomm_start(UART_PORT_BUILTIN);
 	app_uartcomm_start(UART_PORT_EXTRA_HEADER);
+	app_set_configuration(appconf);
+
+	// This reads the appconf, that must be initialized first.
+#if CAN_ENABLE
+	comm_can_init();
+#endif
 
 #ifdef HW_HAS_PERMANENT_NRF
 	conf_general_permanent_nrf_found = nrf_driver_init();
@@ -299,9 +336,7 @@ int main(void) {
 	bm_init();
 #endif
 
-#ifdef HW_SHUTDOWN_HOLD_ON
 	shutdown_init();
-#endif
 
 	imu_reset_orientation();
 
@@ -328,3 +363,5 @@ int main(void) {
 		chThdSleepMilliseconds(10);
 	}
 }
+
+#pragma GCC pop_options

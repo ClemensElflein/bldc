@@ -129,16 +129,15 @@ LBMSRC = ../../src/env.c \
          ../../src/heap.c \
          ../../src/lbm_memory.c \
          ../../src/print.c \
-         ../../src/qq_expand.c \
          ../../src/stack.c \
          ../../src/symrepr.c \
          ../../src/tokpar.c \
          ../../src/lispbm.c \
          ../../src/lbm_c_interop.c \
-         ../../src/lbm_variables.c \
          ../../src/lbm_custom_type.c \
          ../../src/lbm_channel.c \
 	 ../../src/lbm_flags.c \
+         ../../src/lbm_flat_value.c \
          ../../platform/chibios/src/platform_mutex.c
 
 CSRC = $(ALLCSRC) \

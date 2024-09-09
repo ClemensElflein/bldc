@@ -17,6 +17,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC push_options
+#pragma GCC optimize ("Os")
+
 #include "app.h"
 
 #include "ch.h"
@@ -252,9 +255,9 @@ static THD_FUNCTION(ppm_thread, arg) {
 				}
 
 				if (rpm_now >= 0.0) { //Accelerate
-					current = servo_val * mcconf->lo_current_motor_max_now;
+					current = servo_val * mcconf->lo_current_max;
 				} else { //Brake
-					current = servo_val * fabsf(mcconf->lo_current_motor_min_now);
+					current = servo_val * fabsf(mcconf->lo_current_min);
 				}
 
 			} else {
@@ -283,10 +286,10 @@ static THD_FUNCTION(ppm_thread, arg) {
 
 				if (current_mode_brake) {
 					// braking
-					current = fabsf(servo_val * mcconf->lo_current_motor_min_now);
+					current = fabsf(servo_val * mcconf->lo_current_min);
 				} else {
 					// reverse acceleration
-					current = servo_val * fabsf(mcconf->lo_current_motor_min_now);
+					current = servo_val * fabsf(mcconf->lo_current_min);
 				}
 			}
 
@@ -299,9 +302,9 @@ static THD_FUNCTION(ppm_thread, arg) {
 		case PPM_CTRL_TYPE_CURRENT_NOREV:
 			current_mode = true;
 			if ((servo_val >= 0.0 && rpm_now >= 0.0) || (servo_val < 0.0 && rpm_now <= 0.0)) { //Accelerate
-				current = servo_val * mcconf->lo_current_motor_max_now;
+				current = servo_val * mcconf->lo_current_max;
 			} else { //Brake
-				current = servo_val * fabsf(mcconf->lo_current_motor_min_now);
+				current = servo_val * fabsf(mcconf->lo_current_min);
 			}
 
 			if (fabsf(servo_val) < 0.001) {
@@ -315,9 +318,9 @@ static THD_FUNCTION(ppm_thread, arg) {
 			current_mode_brake = servo_val < 0.0;
 
 			if (servo_val >= 0.0 && rpm_now > 0.0) { //Positive input AND going forward = accelerating
-				current = servo_val * mcconf->lo_current_motor_max_now;
+				current = servo_val * mcconf->lo_current_max;
 			} else { //Negative input OR going backwards = brake (no reverse allowed in those control types)
-				current = fabsf(servo_val * mcconf->lo_current_motor_min_now);
+				current = fabsf(servo_val * mcconf->lo_current_min);
 			}
 
 			if (fabsf(servo_val) < 0.001) {
@@ -560,3 +563,5 @@ static THD_FUNCTION(ppm_thread, arg) {
 
 	}
 }
+
+#pragma GCC pop_options

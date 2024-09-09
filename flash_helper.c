@@ -17,6 +17,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC push_options
+#pragma GCC optimize ("Os")
+
 #include "flash_helper.h"
 #include "ch.h"
 #include "hal.h"
@@ -128,7 +131,7 @@ static const uint16_t flash_sector[FLASH_SECTORS] = {
 
 uint16_t flash_helper_erase_new_app(uint32_t new_app_size) {
 #ifdef USE_LISPBM
-	lispif_restart(false, false);
+	lispif_restart(false, false, false);
 #endif
 
 	FLASH_Unlock();
@@ -204,6 +207,10 @@ uint8_t* flash_helper_code_data(int ind) {
 	} else {
 		return 0;
 	}
+}
+
+uint8_t* flash_helper_code_data_raw(int ind) {
+	return (uint8_t*)flash_addr[code_sectors[ind]];
 }
 
 uint32_t flash_helper_code_size(int ind) {
@@ -507,3 +514,5 @@ bool flash_helper_write_nvm(uint8_t *v, unsigned int len, unsigned int address) 
 bool flash_helper_wipe_nvm(void) {
 	return (erase_sector(flash_sector[8]) == FLASH_COMPLETE);
 }
+
+#pragma GCC pop_options

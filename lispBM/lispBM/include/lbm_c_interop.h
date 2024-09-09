@@ -1,5 +1,5 @@
  /*
-    Copyright 2018, 2020, 2021, 2022 Joel Svensson    svenssonjoel@yahoo.se
+    Copyright 2018, 2020 - 2022, 2024 Joel Svensson    svenssonjoel@yahoo.se
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -26,7 +26,6 @@
 #include "heap.h"
 #include "tokpar.h"
 #include "lbm_memory.h"
-#include "lbm_variables.h"
 #include "heap.h"
 #include "lbm_types.h"
 #include "lbm_channel.h"
@@ -38,9 +37,17 @@ extern "C" {
 /** Load and schedule a program for execution.
  *
  * \param tokenizer The tokenizer to read the program from.
+ * \param name Name of thread (or NULL) thread doing the load and eval.
  * \return A context id on success or 0 on failure.
  */
-lbm_cid lbm_load_and_eval_program(lbm_char_channel_t *tokenizer);
+  lbm_cid lbm_load_and_eval_program(lbm_char_channel_t *tokenizer, char *name);
+/** Load a program while evaluating incrementally.
+ *
+ * \param tokenizer The tokenizer to read the program from.
+ * \param name Name of the thread (or NULL) that performs the incremental load.
+ * \return A context id on success or 0 on failure.
+ */
+  lbm_cid lbm_load_and_eval_program_incremental(lbm_char_channel_t *tokenizer, char *name);
 /** Load and schedule an expression for execution.
  *
  * \param tokenizer The tokenizer to read the expression from.
@@ -104,21 +111,43 @@ int lbm_undefine(char *symbol);
  *
  * \param value Result array value.
  * \param data Pointer to the C array
- * \param type What type are the elements of the array.
- * \param num_elt Number of elements in the array.
+ * \param num_elt Number of bytes in the array.
  */
-int lbm_share_array(lbm_value *value, char *data, lbm_type type, lbm_uint num_elt);
+int lbm_share_array(lbm_value *value, char *data, lbm_uint num_elt);
+
+/** Share a C array stored in flash with LBM.
+ *
+ * \param value Pointer to a heap-cell allocated in flash.
+ * \param data Pointer to the C array.
+ * \param num_elt Number of bytes in the array.
+ * \return 1 on success otherwise 0.
+ */
+int lbm_share_const_array(lbm_value *res, char *flash_ptr, lbm_uint num_elt);
 /** Create an array to access from both LBM and C. This function should be called while the evaluator
  * is paused and the array should be bound to something before un-pausing. Send the array in
  * a message with \ref lbm_send_message or define it in the global with \ref lbm_define.
  * The data is stored in lbm_memory as C values (not encoded as lbm values).
  *
  * \param value Result array value.
- * \param type What type are the elements of the array.
- * \param num_elt Number of elements in the array.
+ * \param num_elt Number of bytes in the array.
  */
-int lbm_create_array(lbm_value *value, lbm_type type, lbm_uint num_elt);
+int lbm_create_array(lbm_value *value,lbm_uint num_elt);
 
+/** Clear the global environment.  
+ */
+void lbm_clear_env(void);
+
+/** Flattens one of the fields of the environment hash-map.
+ * Evaluator should be paused when calling this. All processing 
+ * of data and size should be performed before unpausing the evaluator. 
+ * Unpausing the evaluator enables reclamation of data by GC. 
+ *
+ * \param index Value between 0 and GLOBAL_ENV_ROOTS-1
+ * \param data Result data pointer is returned here.
+ * \param size Result size is returned here.
+ */
+bool lbm_flatten_env(int index, lbm_uint** data, lbm_uint *size);
+  
 #ifdef __cplusplus
 }
 #endif

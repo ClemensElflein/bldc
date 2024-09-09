@@ -16,7 +16,6 @@
 */
 
 #include <stdbool.h>
-//#include <stdio.h>
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
@@ -27,85 +26,13 @@
 #include "tokpar.h"
 #include "symrepr.h"
 #include "heap.h"
-#include "qq_expand.h"
 #include "env.h"
 
-#define TOKOPENPAR      1u      // "("
-#define TOKCLOSEPAR     2u      // ")"
-#define TOKQUOTE        3u      // "'"
-#define TOKSYMBOL       4u      // "foo"
-#define TOKINT          5u      // "42", "42i28"
-#define TOKUINT         6u      // "42u28"
-#define TOKBOXEDINT     7u      // "42i32"
-#define TOKBOXEDUINT    8u      // "42u32"
-#define TOKBOXEDFLOAT   9u      // "42.0"
-#define TOKSTRING       10u     // "\"Hello\""
-#define TOKCHAR         11u     // "\\#c"
-#define TOKBACKQUOTE    12u     // "`"
-#define TOKCOMMA        13u     // ","
-#define TOKCOMMAAT      14u     // ",@"
-#define TOKDOT          15u     // "."
-#define TOKDONTCARE     16u     // "_"
-
-#define TOKMATCHANY     17u
-#define TOKMATCHI28     18u
-#define TOKMATCHU28     19u
-#define TOKMATCHU32     20u
-#define TOKMATCHI32     21u
-#define TOKMATCHFLOAT   22u
-#define TOKMATCHCONS    23u
-#define TOKMATCHU64     24u
-#define TOKMATCHI64     25u
-#define TOKMATCHDOUBLE  26u
-
-#define TOKOPENBRACK    30u     // "["
-#define TOKCLOSEBRACK   31u     // "]"
-
-#define TOKTYPEBYTE     34u
-#define TOKTYPEI        35u
-#define TOKTYPEU        36u
-#define TOKTYPEI32      37u
-#define TOKTYPEU32      38u
-#define TOKTYPEI64      39u
-#define TOKTYPEU64      40u
-#define TOKTYPEF32      41u
-#define TOKTYPEF64      42u
-
-#define TOKENIZER_ERROR 1024u
-#define TOKENIZER_END   2048u
-
-#define TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH 256
-
-
-// Tokenizer return values
-// > 0 : Successfully found token
-// = 0 : Tokenizer can definitely not create a token
-// = -1 : Tokenizer does not know if it can or cannot create a token yet.
-// = -2 : Tokenizer was reading a string but ran out of space (for example).
-//        This is an error!
-
-#define TOKENIZER_NO_TOKEN   0
-#define TOKENIZER_NEED_MORE -1
-#define TOKENIZER_STRING_ERROR -2
-#define TOKENIZER_IMPOSSIBLE -3
-
-static char sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH];
+char tokpar_sym_str[TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH];
 
 static void clear_sym_str(void) {
-  memset(sym_str,0,TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
+  memset(tokpar_sym_str,0,TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
 }
-
-typedef struct {
-  uint32_t type;
-  uint64_t value;
-  bool negative;
-} token_int;
-
-typedef struct token_float {
-  uint32_t type;
-  double value;
-  bool negative;
-} token_float;
 
 typedef struct {
   const char *str;
@@ -113,7 +40,35 @@ typedef struct {
   uint32_t len;
 } matcher;
 
-#define NUM_FIXED_SIZE_TOKENS 21
+/*
+  \#\a -> 7                 ; control-g
+  \#\b -> 8                 ; backspace, BS
+  \#\t -> 9                 ; tab, TAB
+  \#\n -> 10                ; newline
+  \#\v -> 11                ; vertical tab
+  \#\f -> 12                ; formfeed character
+  \#\r -> 13                ; carriage return, RET
+  \#\e -> 27                ; escape character, ESC
+  \#\s -> 32                ; space character, SPC
+  \#\\ -> 92                ; backslash character, \
+  \#\d -> 127               ; delete character, DEL
+*/
+
+#define NUM_SPECIAL_CHARS 11
+const char special_chars[NUM_SPECIAL_CHARS][2] =
+  {{'a', '\a'},
+   {'b', '\b'},
+   {'t', '\t'},
+   {'n', '\n'},
+   {'v', '\v'},
+   {'f', '\f'},
+   {'r', '\r'},
+   {'e', 27},
+   {'s', 32},
+   {'\\', '\\'},
+   {'d', 127}};
+
+#define NUM_FIXED_SIZE_TOKENS 16
 const matcher fixed_size_tokens[NUM_FIXED_SIZE_TOKENS] = {
   {"(", TOKOPENPAR, 1},
   {")", TOKCLOSEPAR, 1},
@@ -125,7 +80,12 @@ const matcher fixed_size_tokens[NUM_FIXED_SIZE_TOKENS] = {
   {"`", TOKBACKQUOTE, 1},
   {",@", TOKCOMMAAT, 2},
   {",", TOKCOMMA, 1},
-  {"?", TOKMATCHANY, 1}
+  {"?", TOKMATCHANY, 1},
+  {"{", TOKOPENCURL, 1},
+  {"}", TOKCLOSECURL, 1},
+  {"@const-start", TOKCONSTSTART, 12},
+  {"@const-end", TOKCONSTEND, 10},
+  {"@const-symbol-strings", TOKCONSTSYMSTR, 21},
 };
 
 #define NUM_TYPE_QUALIFIERS 9
@@ -141,7 +101,7 @@ const matcher type_qual_table[NUM_TYPE_QUALIFIERS] = {
   {"b"  , TOKTYPEBYTE, 1}
 };
 
-int tok_match_fixed_size_tokens(lbm_char_channel_t *chan, const matcher *m, unsigned int start_pos, unsigned int num, uint32_t *res) {
+static int tok_match_fixed_size_tokens(lbm_char_channel_t *chan, const matcher *m, unsigned int start_pos, unsigned int num, uint32_t *res) {
 
   for (unsigned int i = 0; i < num; i ++) {
     uint32_t tok_len = m[i].len;
@@ -169,22 +129,39 @@ int tok_match_fixed_size_tokens(lbm_char_channel_t *chan, const matcher *m, unsi
   return TOKENIZER_NO_TOKEN;
 }
 
-bool symchar0(char c) {
-  const char *allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-*/=<>#!";
+int tok_syntax(lbm_char_channel_t *chan, uint32_t *res) {
+  return tok_match_fixed_size_tokens(chan, fixed_size_tokens, 0, NUM_FIXED_SIZE_TOKENS, res);
+}
 
+static bool alpha_char(char c) {
+  return ((c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z'));
+}
+
+static bool num_char(char c) {
+  return (c >= '0' && c <= '9');
+}
+
+static bool symchar0(char c) {
+  const char *allowed = "+-*/=<>#!";
+
+  if (alpha_char(c)) return true;
   int i = 0;
   while (allowed[i] != 0) {
-    if (c == allowed[i++]) return true;
+    if (c == allowed[i]) return true;
+    i ++;
   }
   return false;
 }
 
-bool symchar(char c) {
-  const char *allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-*/=<>!?_";
+static bool symchar(char c) {
+  const char *allowed = "+-*/=<>!?_";
 
+  if (alpha_char(c) || num_char(c)) return true;
   int i = 0;
   while (allowed[i] != 0) {
-    if (c == allowed[i++]) return true;
+    if (c == allowed[i]) return true;
+    i++;
   }
   return false;
 }
@@ -198,23 +175,25 @@ int tok_symbol(lbm_char_channel_t *chan) {
   if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
   if (r == CHANNEL_END)  return TOKENIZER_NO_TOKEN;
   if (r == CHANNEL_SUCCESS && !symchar0(c)) {
-    return TOKENIZER_IMPOSSIBLE;
+    return TOKENIZER_NO_TOKEN;
   }
   clear_sym_str();
-  sym_str[0] = (char)tolower(c);
+  tokpar_sym_str[0] = (char)tolower(c);
 
   int len = 1;
 
   r = lbm_channel_peek(chan,(unsigned int)len, &c);
   while (r == CHANNEL_SUCCESS && symchar(c)) {
+    if (len >= 255) return TOKENIZER_SYMBOL_ERROR;
     c = (char)tolower(c);
     if (len < TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH) {
-      sym_str[len] = (char)c;
+      tokpar_sym_str[len] = (char)c;
     }
     len ++;
     r = lbm_channel_peek(chan,(unsigned int)len, &c);
   }
   if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
+  tokpar_sym_str[len] = 0;
   return len;
 }
 
@@ -224,6 +203,7 @@ static char translate_escape_char(char c) {
   case 'n': return '\n';
   case 'r': return '\r';
   case 't': return '\t';
+  case '0': return '\0';
   case '\"': return '\"';
   default: return '\\';
   }
@@ -242,18 +222,18 @@ int tok_string(lbm_char_channel_t *chan, unsigned int *string_len) {
   else if (r == CHANNEL_END) return TOKENIZER_NO_TOKEN;
 
   if (c != '\"') return TOKENIZER_NO_TOKEN;;
-
   n++;
 
-  memset(sym_str, 0 , TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
+  memset(tokpar_sym_str, 0 , TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH);
 
   // read string into buffer
   r = lbm_channel_peek(chan,n,&c);
   while (r == CHANNEL_SUCCESS && (c != '\"' || (c == '\"' && encode)) &&
          len < TOKENIZER_MAX_SYMBOL_AND_STRING_LENGTH) {
-    if (c == '\\') encode = true;
-    else {
-      sym_str[len] = encode ? translate_escape_char(c) : c ;
+    if (c == '\\' && !encode) {
+      encode = true;
+    } else {
+      tokpar_sym_str[len] = encode ? translate_escape_char(c) : c ;
       len++;
       encode = false;
     }
@@ -278,23 +258,41 @@ int tok_char(lbm_char_channel_t *chan, char *res) {
   if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
   if (r == CHANNEL_END)  return TOKENIZER_NO_TOKEN;
 
-  if (c != '\\') return TOKENIZER_IMPOSSIBLE;
+  if (c != '\\') return TOKENIZER_NO_TOKEN;
 
   r = lbm_channel_peek(chan, 1, &c);
   if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
   if (r == CHANNEL_END)  return TOKENIZER_NO_TOKEN;
 
-  if (c != '#') return TOKENIZER_IMPOSSIBLE;
+  if (c != '#') return TOKENIZER_NO_TOKEN;
 
   r = lbm_channel_peek(chan, 2, &c);
   if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
   if (r == CHANNEL_END)  return TOKENIZER_NO_TOKEN;
 
+  if (c == '\\') {
+    r = lbm_channel_peek(chan, 3, &c);
+    if (r == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
+    if (r == CHANNEL_END)  return TOKENIZER_NO_TOKEN;
+
+    bool ok = false;
+    for (int i = 0; i < NUM_SPECIAL_CHARS; i ++) {
+      if (c == special_chars[i][0]) {
+        *res = special_chars[i][1];
+        ok = true;
+      }
+    }
+    if (ok) {
+      return 4;
+    } else {
+      return TOKENIZER_CHAR_ERROR;
+    }
+  }
   *res = c;
   return 3;
 }
 
-int tok_D(lbm_char_channel_t *chan, token_float *result) {
+int tok_double(lbm_char_channel_t *chan, token_float *result) {
 
   unsigned int n = 0;
   char fbuf[128];
@@ -378,17 +376,17 @@ int tok_D(lbm_char_channel_t *chan, token_float *result) {
       (!result->negative && n > 0)) valid_num = true;
 
   if (n > 127) {
-    return 0;
+    return TOKENIZER_NO_TOKEN;
   }
 
   if(valid_num) {
     result->value = (double)strtod(fbuf,NULL);
     return (int)n + type_len;
   }
-  return 0;
+  return TOKENIZER_NO_TOKEN;
 }
 
-bool clean_whitespace(lbm_char_channel_t *chan) {
+bool tok_clean_whitespace(lbm_char_channel_t *chan) {
 
   bool cleaning_whitespace = true;
   char c;
@@ -437,7 +435,7 @@ bool clean_whitespace(lbm_char_channel_t *chan) {
   return true;
 }
 
-int tok_integer(lbm_char_channel_t *chan, token_int *result ) {
+int tok_integer(lbm_char_channel_t *chan, token_int *result) {
   uint64_t acc = 0;
   unsigned int n = 0;
   bool valid_num = false;
@@ -450,7 +448,7 @@ int tok_integer(lbm_char_channel_t *chan, token_int *result ) {
   if (res == CHANNEL_MORE) {
     return TOKENIZER_NEED_MORE;
   } else if (res == CHANNEL_END) {
-    return 0;
+    return TOKENIZER_NO_TOKEN;
   }
   if (c == '-') {
     n = 1;
@@ -476,7 +474,7 @@ int tok_integer(lbm_char_channel_t *chan, token_int *result ) {
     res = lbm_channel_peek(chan,n, &c);
 
     if (res == CHANNEL_MORE) return TOKENIZER_NEED_MORE;
-    else if (res == CHANNEL_END) return 0;
+    else if (res == CHANNEL_END) return TOKENIZER_NO_TOKEN;
 
     while ((c >= '0' && c <= '9') ||
            (c >= 'a' && c <= 'f') ||
@@ -508,7 +506,7 @@ int tok_integer(lbm_char_channel_t *chan, token_int *result ) {
     }
   }
 
-  if (n == 0) return 0;
+  if (n == 0) return TOKENIZER_NO_TOKEN;
 
   uint32_t tok_res;
   int type_len = tok_match_fixed_size_tokens(chan, type_qual_table, n, NUM_TYPE_QUALIFIERS, &tok_res);
@@ -526,197 +524,5 @@ int tok_integer(lbm_char_channel_t *chan, token_int *result ) {
     result->value = acc;
     return (int)n + type_len;
   }
-  return 0;
+  return TOKENIZER_NO_TOKEN;
 }
-
-lbm_value lbm_get_next_token(lbm_char_channel_t *chan, bool peek) {
-
-  char c_val;
-  int n = 0;
-
-  if (!lbm_channel_more(chan) && lbm_channel_is_empty(chan)) {
-    return lbm_enc_sym(SYM_TOKENIZER_DONE);
-  }
-
-  // Eat whitespace and comments.
-  if (!clean_whitespace(chan)) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  // Check for end of string again
-  if (!lbm_channel_more(chan) && lbm_channel_is_empty(chan)) {
-    return lbm_enc_sym(SYM_TOKENIZER_DONE);
-  }
-
-  lbm_value res = lbm_enc_sym(SYM_TOKENIZER_RERROR);
-  uint32_t match;
-  n = tok_match_fixed_size_tokens(chan,
-                                  fixed_size_tokens,
-                                  0,
-                                  NUM_FIXED_SIZE_TOKENS,
-                                  &match);
-  if (n > 0) {
-
-    if (!peek) {
-      if (!lbm_channel_drop(chan, (unsigned int)n)) {
-        // Really should not happen (bug in channel implementation)
-      }
-    }
-    switch (match) {
-    case TOKOPENPAR:
-      res = lbm_enc_sym(SYM_OPENPAR);
-      break;
-    case TOKCLOSEPAR:
-      res = lbm_enc_sym(SYM_CLOSEPAR);
-      break;
-    case TOKDOT:
-      res = lbm_enc_sym(SYM_DOT);
-      break;
-    case TOKDONTCARE:
-      res = lbm_enc_sym(SYM_DONTCARE);
-      break;
-    case TOKQUOTE:
-      res = lbm_enc_sym(SYM_QUOTE_IT);
-      break;
-    case TOKBACKQUOTE:
-      res = lbm_enc_sym(SYM_BACKQUOTE);
-      break;
-    case TOKCOMMAAT:
-      res = lbm_enc_sym(SYM_COMMAAT);
-      break;
-    case TOKCOMMA:
-      res = lbm_enc_sym(SYM_COMMA);
-      break;
-    case TOKMATCHANY:
-      res = lbm_enc_sym(SYM_MATCH_ANY);
-      break;
-    case TOKOPENBRACK:
-      res = lbm_enc_sym(SYM_OPENBRACK);
-      break;
-    case TOKCLOSEBRACK:
-      res = lbm_enc_sym(SYM_CLOSEBRACK);
-      break;
-      //res = lbm_enc_sym(SYM_RERROR); // a closing bracket without matching open.
-    default:
-      break;
-    }
-    return res;
-  } else if (n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  unsigned int string_len = 0;
-  n = tok_string(chan, &string_len);
-  if (n >= 2) {
-    if (!peek) lbm_channel_drop(chan, (unsigned int)n);
-    // TODO: Proper error checking here!
-    // TODO: Check if anything has to be allocated for the empty string
-    if (!lbm_heap_allocate_array(&res, (unsigned int)(string_len+1), LBM_TYPE_CHAR)) {
-      // Should really be a tokenizer memory error.
-      // GC should run and tokenizer be retried.
-      // Needs some thinking on how to do that.
-      return lbm_enc_sym(TOKENIZER_ERROR);
-    }
-    lbm_array_header_t *arr = (lbm_array_header_t*)lbm_car(res);
-    char *data = (char *)arr->data;
-    memset(data, 0, (string_len+1) * sizeof(char));
-    memcpy(data, sym_str, string_len * sizeof(char));
-    return res;
-  } else if (n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  } else if (n == TOKENIZER_STRING_ERROR) {
-    return ENC_SYM_TOKENIZER_RERROR;
-  }
-
-  token_float f_val;
-
-  n = tok_D(chan, &f_val);
-  if (n > 0) {
-    if (!peek) lbm_channel_drop(chan, (unsigned int)n);
-    switch (f_val.type) {
-    case TOKTYPEF32:
-      return lbm_enc_float((float)f_val.value);
-    case TOKTYPEF64:
-      return lbm_enc_double(f_val.value);
-    }
-  } else if ( n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  token_int int_result;
-
-  n = tok_integer(chan, &int_result);
-  if (n > 0) {
-    if (!peek) lbm_channel_drop(chan, (unsigned int)n);
-
-    switch (int_result.type) {
-    case TOKTYPEBYTE:
-      return lbm_enc_char((char)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEI:
-      return lbm_enc_i((lbm_int)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEU:
-      return lbm_enc_u((lbm_uint)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEI32:
-      return lbm_enc_i32((lbm_int)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEU32:
-      return lbm_enc_u32((lbm_uint)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEI64:
-      return lbm_enc_i64((int64_t)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    case TOKTYPEU64:
-      return lbm_enc_u64((uint64_t)(int_result.negative ? -int_result.value : int_result.value));
-      break;
-    default:
-      return ENC_SYM_TOKENIZER_RERROR;
-      break;
-    }
-  } else if (n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  n = tok_symbol(chan);
-  if (n > 0) {
-
-    if (!peek) lbm_channel_drop(chan,(unsigned int)n);
-
-    lbm_uint symbol_id;
-
-    if (lbm_get_symbol_by_name(sym_str, &symbol_id)) {
-      res = lbm_enc_sym(symbol_id);
-    }
-    else {
-      int r = 0;
-      if (strncmp(sym_str,"ext-",4) == 0) {
-        r = lbm_add_extension_symbol(sym_str, &symbol_id);
-      } else if (sym_str[0] == '#') {
-        r = lbm_add_variable_symbol(sym_str, &symbol_id);
-      } else {
-        r = lbm_add_symbol(sym_str, &symbol_id);
-      }
-      if (r) {
-        res = lbm_enc_sym(symbol_id);
-      } else {
-        res = ENC_SYM_TOKENIZER_RERROR;
-      }
-    }
-    return res;
-  } else if (n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  n = tok_char(chan, &c_val);
-  if (n > 0) {
-    if (!peek) lbm_channel_drop(chan,(unsigned int)n);
-    return lbm_enc_char(c_val);
-  } else if (n == TOKENIZER_NEED_MORE) {
-    return lbm_enc_sym(SYM_TOKENIZER_WAIT);
-  }
-
-  return ENC_SYM_TOKENIZER_RERROR;
-}
-

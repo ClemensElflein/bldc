@@ -17,18 +17,20 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC push_options
+#pragma GCC optimize ("Os")
+
 #include "commands.h"
 #include "ch.h"
 #include "hal.h"
 #include "mc_interface.h"
 #include "stm32f4xx_conf.h"
-#include "servo_simple.h"
+#include "pwm_servo.h"
 #include "buffer.h"
 #include "terminal.h"
 #include "hw.h"
 #include "mcpwm.h"
 #include "mcpwm_foc.h"
-#include "mc_interface.h"
 #include "app.h"
 #include "timeout.h"
 #include "servo_dec.h"
@@ -39,7 +41,6 @@
 #include "packet.h"
 #include "encoder/encoder.h"
 #include "nrf_driver.h"
-#include "gpdrive.h"
 #include "confgenerator.h"
 #include "imu.h"
 #include "shutdown.h"
@@ -212,7 +213,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			packet_id == COMM_EXT_NRF_ESB_RX_DATA) {
 		send_func_nrf = reply_func;
 	} else {
-		send_func = reply_func;
+		if (packet_id != COMM_LISP_RMSG) {
+			send_func = reply_func;
+		}
 	}
 
 	// Avoid calling invalid function pointer if it is null.
@@ -284,6 +287,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		strcpy((char*)(send_buffer + ind), FW_NAME);
 		ind += strlen(FW_NAME) + 1;
+
+		buffer_append_uint32(send_buffer, main_calc_hw_crc(), &ind);
 
 		fw_version_sent_cnt++;
 
@@ -529,7 +534,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_SET_SERVO_POS: {
 		int32_t ind = 0;
-		servo_simple_set_output(buffer_get_float16(data, 1000.0, &ind));
+		pwm_servo_set_servo_out(buffer_get_float16(data, 1000.0, &ind));
 	} break;
 
 	case COMM_SET_MCCONF: {
@@ -541,7 +546,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			utils_truncate_number(&mcconf->l_current_max_scale , 0.0, 1.0);
 			utils_truncate_number(&mcconf->l_current_min_scale , 0.0, 1.0);
 
-#ifdef HW_HAS_DUAL_MOTORS
+#if defined(HW_HAS_DUAL_MOTORS) & !defined(HW_SET_SINGLE_MOTOR)
 			mcconf->motor_type = MOTOR_TYPE_FOC;
 #endif
 
@@ -549,8 +554,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			mcconf->lo_current_min = mcconf->l_current_min * mcconf->l_current_min_scale;
 			mcconf->lo_in_current_max = mcconf->l_in_current_max;
 			mcconf->lo_in_current_min = mcconf->l_in_current_min;
-			mcconf->lo_current_motor_max_now = mcconf->lo_current_max;
-			mcconf->lo_current_motor_min_now = mcconf->lo_current_min;
 
 			commands_apply_mcconf_hw_limits(mcconf);
 			conf_general_store_mc_configuration(mcconf, mc_interface_get_motor_thread() == 2);
@@ -709,24 +712,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		reply_func(send_buffer, ind);
 	} break;
 
-	case COMM_GET_DECODED_BALANCE: {
-		int32_t ind = 0;
-		uint8_t send_buffer[50];
-		send_buffer[ind++] = COMM_GET_DECODED_BALANCE;
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pid_output() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pitch_angle() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_roll_angle() * 1000000.0), &ind);
-		buffer_append_uint32(send_buffer, app_balance_get_diff_time(), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_motor_current() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug1() * 1000000.0), &ind);
-		buffer_append_uint16(send_buffer, app_balance_get_state(), &ind);
-		buffer_append_uint16(send_buffer, app_balance_get_switch_state(), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc1() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc2() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug2() * 1000000.0), &ind);
-		reply_func(send_buffer, ind);
-	} break;
-
 	case COMM_FORWARD_CAN: {
 		send_func_can_fwd = reply_func;
 
@@ -789,61 +774,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_buffer[ind++] = packet_id;
 		send_buffer[ind++] = NRF_PAIR_STARTED;
 		reply_func(send_buffer, ind);
-	} break;
-
-	case COMM_GPD_SET_FSW: {
-		timeout_reset();
-		int32_t ind = 0;
-		gpdrive_set_switching_frequency((float)buffer_get_int32(data, &ind));
-	} break;
-
-	case COMM_GPD_BUFFER_SIZE_LEFT: {
-		int32_t ind = 0;
-		uint8_t send_buffer[50];
-		send_buffer[ind++] = COMM_GPD_BUFFER_SIZE_LEFT;
-		buffer_append_int32(send_buffer, gpdrive_buffer_size_left(), &ind);
-		reply_func(send_buffer, ind);
-	} break;
-
-	case COMM_GPD_FILL_BUFFER: {
-		timeout_reset();
-		int32_t ind = 0;
-		while (ind < (int)len) {
-			gpdrive_add_buffer_sample(buffer_get_float32_auto(data, &ind));
-		}
-	} break;
-
-	case COMM_GPD_OUTPUT_SAMPLE: {
-		timeout_reset();
-		int32_t ind = 0;
-		gpdrive_output_sample(buffer_get_float32_auto(data, &ind));
-	} break;
-
-	case COMM_GPD_SET_MODE: {
-		timeout_reset();
-		int32_t ind = 0;
-		gpdrive_set_mode(data[ind++]);
-	} break;
-
-	case COMM_GPD_FILL_BUFFER_INT8: {
-		timeout_reset();
-		int32_t ind = 0;
-		while (ind < (int)len) {
-			gpdrive_add_buffer_sample_int((int8_t)data[ind++]);
-		}
-	} break;
-
-	case COMM_GPD_FILL_BUFFER_INT16: {
-		timeout_reset();
-		int32_t ind = 0;
-		while (ind < (int)len) {
-			gpdrive_add_buffer_sample_int(buffer_get_int16(data, &ind));
-		}
-	} break;
-
-	case COMM_GPD_SET_BUFFER_INT_SCALE: {
-		int32_t ind = 0;
-		gpdrive_set_buffer_int_scale(buffer_get_float32_auto(data, &ind));
 	} break;
 
 	case COMM_GET_VALUES_SETUP:
@@ -1010,8 +940,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 		mcconf->lo_current_min = mcconf->l_current_min * mcconf->l_current_min_scale;
 		mcconf->lo_current_max = mcconf->l_current_max * mcconf->l_current_max_scale;
-		mcconf->lo_current_motor_min_now = mcconf->lo_current_min;
-		mcconf->lo_current_motor_max_now = mcconf->lo_current_max;
 		mcconf->lo_in_current_min = mcconf->l_in_current_min;
 		mcconf->lo_in_current_max = mcconf->l_in_current_max;
 
@@ -1199,15 +1127,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32_auto(send_buffer, q[3], &ind);
 		}
 
-		if (mask & ((uint32_t)1 << 16)) {
-			uint8_t current_controller_id = app_get_configuration()->controller_id;
+		uint8_t current_controller_id = app_get_configuration()->controller_id;
 #ifdef HW_HAS_DUAL_MOTORS
-			if (mc_interface_get_motor_thread() == 2) {
-				current_controller_id = utils_second_motor_id();
-			}
-#endif
-			send_buffer[ind++] = current_controller_id;
+		if (mc_interface_get_motor_thread() == 2) {
+			current_controller_id = utils_second_motor_id();
 		}
+#endif
+		send_buffer[ind++] = current_controller_id;
 
 		reply_func(send_buffer, ind);
 	} break;
@@ -1465,7 +1391,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 #ifdef USE_LISPBM
 		if (packet_id == COMM_LISP_ERASE_CODE) {
-			lispif_restart(false, false);
+			lispif_restart(false, false, false);
 		}
 #endif
 
@@ -1629,7 +1555,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	case COMM_LISP_SET_RUNNING:
 	case COMM_LISP_GET_STATS:
 	case COMM_LISP_REPL_CMD:
-	case COMM_LISP_STREAM_CODE: {
+	case COMM_LISP_STREAM_CODE:
+	case COMM_LISP_RMSG: {
 #ifdef USE_LISPBM
 		lispif_process_cmd(data - 1, len + 1, reply_func);
 #endif
@@ -1641,6 +1568,26 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	case COMM_SET_CUSTOM_CONFIG:
 	case COMM_GET_CUSTOM_CONFIG_XML: {
 		conf_custom_process_cmd(data - 1, len + 1, reply_func);
+	} break;
+
+
+	case COMM_SHUTDOWN: {
+		int ind = 0;
+		int force = data[ind++];
+		if ((fabsf(mc_interface_get_rpm()) > 100) && (force != 1)) {
+			// Don't allow shutdown/restart while riding, unless force == 1
+			break;
+		}
+
+		int is_restart = data[ind++];
+		if (is_restart == 1) {
+			// same as terminal rebootwdt command
+			chSysLock();
+			for (;;) {__NOP();}
+		}
+		else {
+			do_shutdown(false);
+		}
 	} break;
 
 	// Blocking commands. Only one of them runs at any given time, in their
@@ -1851,7 +1798,7 @@ void commands_apply_mcconf_hw_limits(mc_configuration *mcconf) {
 	// This limit should always be active, as starving the threads never
 	// makes sense.
 #ifdef HW_LIM_FOC_CTRL_LOOP_FREQ
-    if (mcconf->foc_sample_v0_v7 == true) {
+    if (mcconf->foc_control_sample_mode == FOC_CONTROL_SAMPLE_MODE_V0_V7) {
     	//control loop executes twice per pwm cycle when sampling in v0 and v7
 		utils_truncate_number(&mcconf->foc_f_zv, HW_LIM_FOC_CTRL_LOOP_FREQ);
 		ctrl_loop_freq = mcconf->foc_f_zv;
@@ -1873,6 +1820,8 @@ void commands_apply_mcconf_hw_limits(mc_configuration *mcconf) {
     } else {
     	utils_truncate_number_int(&mcconf->m_hall_extra_samples, 0, 10);
     }
+
+    utils_truncate_number_abs(&mcconf->foc_sl_erpm_start, mcconf->foc_sl_erpm * 0.9);
 
 #ifndef DISABLE_HW_LIMITS
 
@@ -2429,3 +2378,5 @@ static THD_FUNCTION(blocking_thread, arg) {
 		}
 	}
 }
+
+#pragma GCC pop_options
